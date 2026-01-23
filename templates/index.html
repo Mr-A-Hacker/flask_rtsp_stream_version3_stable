@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Camera Dashboard</title>
+
+    <style>
+        body {
+            margin: 0;
+            background: #111;
+            color: #eee;
+            font-family: Arial, sans-serif;
+            text-align: center;
+        }
+
+        #video-wrapper {
+            position: relative;
+            display: inline-block;
+            margin-top: 20px;
+        }
+
+        #stream {
+            width: 90%;
+            max-width: 900px;
+            border: 2px solid #333;
+            border-radius: 6px;
+        }
+
+        #boxCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 20;
+            cursor: crosshair;
+            display: none;
+        }
+
+        .overlay-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: rgba(0,0,0,0.6);
+            color: #fff;
+            padding: 8px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            z-index: 30;
+        }
+
+        #settings-btn {
+            right: 60px;
+        }
+
+        #settings-panel {
+            position: absolute;
+            top: 60px;
+            right: 20px;
+            width: 260px;
+            background: #1c1c1c;
+            border: 1px solid #333;
+            padding: 15px;
+            display: none;
+            border-radius: 6px;
+            z-index: 40;
+        }
+
+        .settings-btn {
+            width: 100%;
+            padding: 10px;
+            margin-top: 8px;
+            background: #333;
+            border: none;
+            color: #fff;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+
+        .settings-btn:hover {
+            background: #444;
+        }
+
+        /* Alarm Popup */
+        #alarm-popup {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #222;
+            padding: 20px;
+            border: 2px solid #444;
+            border-radius: 8px;
+            display: none;
+            z-index: 999;
+            color: white;
+            width: 300px;
+            text-align: center;
+        }
+
+        .alarm-btn {
+            width: 100%;
+            padding: 10px;
+            margin-top: 6px;
+            background: #333;
+            border: none;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .alarm-btn:hover {
+            background: #444;
+        }
+
+        #close-alarm-popup {
+            margin-top: 10px;
+            padding: 8px 12px;
+            background: #444;
+            border: none;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+<div id="video-wrapper">
+    <img id="stream" src="/video">
+    <canvas id="boxCanvas"></canvas>
+
+    <button id="settings-btn" class="overlay-btn" onclick="toggleSettings()">⚙</button>
+    <button id="fullscreen-btn" class="overlay-btn" onclick="toggleFullscreen()">⛶</button>
+
+    <div id="settings-panel">
+        <h3>Settings</h3>
+
+        <button class="settings-btn" onclick="startBoxDrawing()">Draw Alarm Box</button>
+        <button class="settings-btn" onclick="saveBox()">Save Alarm Box</button>
+        <button class="settings-btn" onclick="toggleAlarmBox()">Toggle Alarm Box</button>
+        <button class="settings-btn" onclick="chooseAlarm()">Choose Alarm Sound</button>
+    </div>
+</div>
+
+<!-- Alarm Selection Popup -->
+<div id="alarm-popup">
+    <h3>Select Alarm</h3>
+    <div id="alarm-list"></div>
+    <button id="close-alarm-popup" onclick="closeAlarmPopup()">Close</button>
+</div>
+
+<script>
+function toggleSettings() {
+    const panel = document.getElementById("settings-panel");
+    panel.style.display = (panel.style.display === "block") ? "none" : "block";
+}
+
+function toggleFullscreen() {
+    const video = document.getElementById("stream");
+    if (!document.fullscreenElement) video.requestFullscreen();
+    else document.exitFullscreen();
+}
+
+/* DRAW BOX */
+let boxStart = null;
+let boxEnd = null;
+let drawing = false;
+const boxCanvas = document.getElementById("boxCanvas");
+const boxCtx = boxCanvas.getContext("2d");
+
+function startBoxDrawing() {
+    const video = document.getElementById("stream");
+    boxCanvas.width = video.clientWidth;
+    boxCanvas.height = video.clientHeight;
+    boxCanvas.style.display = "block";
+    drawing = true;
+    boxCtx.clearRect(0, 0, boxCanvas.width, boxCanvas.height);
+}
+
+boxCanvas.addEventListener("mousedown", e => {
+    if (!drawing) return;
+    const r = boxCanvas.getBoundingClientRect();
+    boxStart = { x: e.clientX - r.left, y: e.clientY - r.top };
+});
+
+boxCanvas.addEventListener("mousemove", e => {
+    if (!drawing || !boxStart) return;
+    const r = boxCanvas.getBoundingClientRect();
+    boxEnd = { x: e.clientX - r.left, y: e.clientY - r.top };
+
+    boxCtx.clearRect(0, 0, boxCanvas.width, boxCanvas.height);
+    boxCtx.strokeStyle = "red";
+    boxCtx.lineWidth = 2;
+    boxCtx.strokeRect(
+        boxStart.x,
+        boxStart.y,
+        boxEnd.x - boxStart.x,
+        boxEnd.y - boxStart.y
+    );
+});
+
+function saveBox() {
+    if (!boxStart || !boxEnd) {
+        alert("Draw a box first");
+        return;
+    }
+
+    const x1 = Math.min(boxStart.x, boxEnd.x);
+    const y1 = Math.min(boxStart.y, boxEnd.y);
+    const x2 = Math.max(boxStart.x, boxEnd.x);
+    const y2 = Math.max(boxStart.y, boxEnd.y);
+
+    fetch("/save_box", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ box_pix: [x1, y1, x2, y2] })
+    }).then(() => {
+        alert("Box saved");
+        boxCanvas.style.display = "none";
+        drawing = false;
+    });
+}
+
+function toggleAlarmBox() {
+    fetch("/toggle_alarm_box", { method: "POST" })
+        .then(r => r.json())
+        .then(data => alert("Alarm Box: " + (data.enabled ? "ON" : "OFF")));
+}
+
+/* NEW CLICKABLE ALARM POPUP */
+function chooseAlarm() {
+    fetch("/list_alarms")
+        .then(r => r.json())
+        .then(files => {
+            const listDiv = document.getElementById("alarm-list");
+            listDiv.innerHTML = "";
+
+            files.forEach(file => {
+                const btn = document.createElement("button");
+                btn.textContent = file;
+                btn.className = "alarm-btn";
+                btn.onclick = () => {
+                    fetch("/set_alarm", {
+                        method: "POST",
+                        headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify({ filename: file })
+                    });
+                    closeAlarmPopup();
+                };
+                listDiv.appendChild(btn);
+            });
+
+            document.getElementById("alarm-popup").style.display = "block";
+        });
+}
+
+function closeAlarmPopup() {
+    document.getElementById("alarm-popup").style.display = "none";
+}
+</script>
+
+</body>
+</html>
