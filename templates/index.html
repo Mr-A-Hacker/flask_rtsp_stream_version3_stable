@@ -19,9 +19,10 @@
             margin-top: 20px;
         }
 
+        /* FIXED SIZE TO MATCH BACKEND (960x540) */
         #stream {
-            width: 90%;
-            max-width: 900px;
+            width: 960px;
+            height: 540px;
             border: 2px solid #333;
             border-radius: 6px;
         }
@@ -97,6 +98,12 @@
             text-align: center;
         }
 
+        #alarm-list {
+            max-height: 200px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+
         .alarm-btn {
             width: 100%;
             padding: 10px;
@@ -135,9 +142,16 @@
     <div id="settings-panel">
         <h3>Settings</h3>
 
+        <!-- Alarm Box Controls -->
         <button class="settings-btn" onclick="startBoxDrawing()">Draw Alarm Box</button>
-        <button class="settings-btn" onclick="saveBox()">Save Alarm Box</button>
         <button class="settings-btn" onclick="toggleAlarmBox()">Toggle Alarm Box</button>
+        <button class="settings-btn" onclick="toggleAlarmBoxVisibility()">Show/Hide Alarm Box</button>
+
+        <!-- YOLO Controls -->
+        <button class="settings-btn" onclick="toggleYoloBoxes()">Show/Hide YOLO Boxes</button>
+        <button class="settings-btn" onclick="toggleMovement()">Toggle Movement Detection</button>
+
+        <!-- Alarm Sound -->
         <button class="settings-btn" onclick="chooseAlarm()">Choose Alarm Sound</button>
     </div>
 </div>
@@ -150,18 +164,29 @@
 </div>
 
 <script>
+/* Ensure canvas always matches video */
+function resizeCanvasToVideo() {
+    const video = document.getElementById("stream");
+    boxCanvas.width = video.clientWidth;
+    boxCanvas.height = video.clientHeight;
+}
+window.onload = resizeCanvasToVideo;
+window.onresize = resizeCanvasToVideo;
+
+/* SETTINGS PANEL */
 function toggleSettings() {
     const panel = document.getElementById("settings-panel");
     panel.style.display = (panel.style.display === "block") ? "none" : "block";
 }
 
+/* FULLSCREEN */
 function toggleFullscreen() {
     const video = document.getElementById("stream");
     if (!document.fullscreenElement) video.requestFullscreen();
     else document.exitFullscreen();
 }
 
-/* DRAW BOX */
+/* DRAW BOX — AUTO‑SAVE VERSION */
 let boxStart = null;
 let boxEnd = null;
 let drawing = false;
@@ -169,11 +194,11 @@ const boxCanvas = document.getElementById("boxCanvas");
 const boxCtx = boxCanvas.getContext("2d");
 
 function startBoxDrawing() {
-    const video = document.getElementById("stream");
-    boxCanvas.width = video.clientWidth;
-    boxCanvas.height = video.clientHeight;
+    resizeCanvasToVideo();
     boxCanvas.style.display = "block";
     drawing = true;
+    boxStart = null;
+    boxEnd = null;
     boxCtx.clearRect(0, 0, boxCanvas.width, boxCanvas.height);
 }
 
@@ -199,35 +224,58 @@ boxCanvas.addEventListener("mousemove", e => {
     );
 });
 
-function saveBox() {
-    if (!boxStart || !boxEnd) {
-        alert("Draw a box first");
-        return;
-    }
+/* AUTO‑SAVE ON MOUSE UP */
+boxCanvas.addEventListener("mouseup", e => {
+    if (!drawing || !boxStart || !boxEnd) return;
 
     const x1 = Math.min(boxStart.x, boxEnd.x);
     const y1 = Math.min(boxStart.y, boxEnd.y);
     const x2 = Math.max(boxStart.x, boxEnd.x);
     const y2 = Math.max(boxStart.y, boxEnd.y);
 
+    // NORMALIZED COORDINATES
+    const nx1 = x1 / boxCanvas.width;
+    const ny1 = y1 / boxCanvas.height;
+    const nx2 = x2 / boxCanvas.width;
+    const ny2 = y2 / boxCanvas.height;
+
     fetch("/save_box", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ box_pix: [x1, y1, x2, y2] })
+        body: JSON.stringify({ box_norm: [nx1, ny1, nx2, ny2] })
     }).then(() => {
         alert("Box saved");
         boxCanvas.style.display = "none";
         drawing = false;
     });
-}
+});
 
+/* BACKEND TOGGLES */
 function toggleAlarmBox() {
     fetch("/toggle_alarm_box", { method: "POST" })
         .then(r => r.json())
         .then(data => alert("Alarm Box: " + (data.enabled ? "ON" : "OFF")));
 }
 
-/* NEW CLICKABLE ALARM POPUP */
+function toggleAlarmBoxVisibility() {
+    fetch("/toggle_box_visibility", { method: "POST" })
+        .then(r => r.json())
+        .then(data => alert("Alarm Box Visible: " + data.visible));
+}
+
+function toggleYoloBoxes() {
+    fetch("/toggle_yolo_boxes", { method: "POST" })
+        .then(r => r.json())
+        .then(data => alert("YOLO Boxes: " + (data.enabled ? "ON" : "OFF")));
+}
+
+function toggleMovement() {
+    fetch("/toggle_movement_detection", { method: "POST" })
+        .then(r => r.json())
+        .then(data => alert("Movement Detection: " + (data.enabled ? "ON" : "OFF")));
+}
+
+/* ALARM POPUP */
 function chooseAlarm() {
     fetch("/list_alarms")
         .then(r => r.json())
